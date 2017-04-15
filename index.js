@@ -257,6 +257,7 @@ protractorUtil.joinReports = function(context, done) {
             pending: 0,
             disabled: 0
         },
+        failedSpecIDs: [],
         ci: ci,
         generatedOn: new Date()
     };
@@ -268,6 +269,12 @@ protractorUtil.joinReports = function(context, done) {
             for (var j = 0; j < report.tests.length; j++) {
                 var test = report.tests[j];
                 data.tests.push(test);
+                if (test.status != 'passed') {
+                    var failedSpecID = test.fullName.substring(1, test.fullName.indexOf(']'));
+                    if (!data.failedSpecIDs.includes(failedSpecID)) {
+                        data.failedSpecIDs.push(failedSpecID);
+                    }
+                }
             }
             data.stat.passed += report.stat.passed || 0;
             data.stat.failed += report.stat.failed || 0;
@@ -289,6 +296,13 @@ protractorUtil.joinReports = function(context, done) {
         }
         return done(null);
     });
+
+console.log("\nFailed specs:");
+
+for (var i = 0; i < data.failedSpecIDs.length; i++) {
+    console.log(i + ":" + data.failedSpecIDs[i]);
+}
+
 };
 
 protractorUtil.installReporter = function(context) {
