@@ -111,9 +111,9 @@ protractorUtil.takeScreenshotOnExpectDone = function(context) {
         expectation.when = now.toDate();
 
         if (!passed && context.config.pauseOn === 'failure') {
-            protractorUtil.logInfo('Pause browser because of a failure: %s', expectation.message);
+            protractorUtil.logInfo('\nPause browser because of a failure: %s and stack info: %s\n', expectation.message, expectation.stack );
             protractorUtil.logDebug(expectation.stack);
-            global.browser.pause();
+            global.browser.pause(Math.floor(Math.random() * (6000 - 5000 + 1)) + 5000);
         }
 
         var makeScreenshotsFromEachBrowsers = false;
@@ -297,11 +297,11 @@ protractorUtil.joinReports = function(context, done) {
         return done(null);
     });
 
-console.log("\nFailed specs:");
-
-for (var i = 0; i < data.failedSpecIDs.length; i++) {
-    console.log(i + ":" + data.failedSpecIDs[i]);
-}
+//console.log("\nFailed specs:");
+//
+//for (var i = 0; i < data.failedSpecIDs.length; i++) {
+//    console.log(i + ":" + data.failedSpecIDs[i]);
+//}
 
 };
 
@@ -364,7 +364,7 @@ protractorUtil.registerJasmineReporter = function(context) {
                 protractorUtil.logInfo('Pause browser because of a spec failed  - %s', result.name);
                 protractorUtil.logDebug(result.failedExpectations[0].message);
                 protractorUtil.logDebug(result.failedExpectations[0].stack);
-                global.browser.pause();
+                global.browser.pause(Math.floor(Math.random() * (6000 - 5000 + 1)) + 5000);
             }
         }
     });
