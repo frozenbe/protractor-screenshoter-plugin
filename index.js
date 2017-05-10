@@ -3,11 +3,14 @@ var mkdirp = require('mkdirp');
 var _ = require('lodash');
 var uuid = require('uuid');
 var moment = require('moment');
+var tz = require('moment-timezone');
 var path = require('path');
 var imageToAscii = require("image-to-ascii");
 var CircularJSON = require('circular-json');
 var q = require('q');
 var assert = require('assert');
+//var jsonfile = require('../jsonfile');
+//var statsFile = require('../../target/stats/execution-success-rates.json');
 
 /**
  * This plugin does few things:
@@ -35,6 +38,19 @@ var assert = require('assert');
  *    @author Andrej Zachar, Abhishek Swain
  *    @created December 01 2015, forked on October 2016
  */
+ Array.prototype.contains = function (name,clientCard) {
+    for (i in this) {
+        if ((this[i].name == name) && (this[i].clientCard == clientCard)) return true;
+    }
+    return false;
+ }
+
+updateFailures = function( myArray, testname ) {
+    for( i=myArray.length-1; i>=0; i--) {
+        if( myArray[i].name == testname) myArray.splice(i,1);
+    }
+ };
+
 var protractorUtil = function() {};
 
 protractorUtil.logDebug = function() {};
@@ -111,9 +127,9 @@ protractorUtil.takeScreenshotOnExpectDone = function(context) {
         expectation.when = now.toDate();
 
         if (!passed && context.config.pauseOn === 'failure') {
-            protractorUtil.logInfo('Pause browser because of a failure: %s', expectation.message);
+            protractorUtil.logInfo('\nPause browser because of a failure: %s and stack info: %s\n', expectation.message, expectation.stack );
             protractorUtil.logDebug(expectation.stack);
-            global.browser.pause();
+            global.browser.pause(Math.floor(Math.random() * (6000 - 5000 + 1)) + 5000);
         }
 
         var makeScreenshotsFromEachBrowsers = false;
@@ -225,7 +241,7 @@ protractorUtil.writeReport = function(context, done) {
     var data = {
         tests: protractorUtil.testResults,
         stat: protractorUtil.stat,
-        generatedOn: new Date()
+        generatedOn: moment().tz("America/New_York").format("YYYY-MM-DD HH:mm:ss")
     };
 
     fse.outputFile(file, CircularJSON.stringify(data), function(err) {
@@ -249,16 +265,31 @@ protractorUtil.joinReports = function(context, done) {
         name: process.env.CIRCLE_PROJECT_REPONAME || 'N/A'
     };
 
+    var titleFormatted = context.config.title.toString();
+    var browserFormatted = context.config.browser.toString().substring(0,context.config.browser.toString().indexOf(","));
+    var environmentFormatted = context.config.environment.toString().substring(0,context.config.environment.toString().indexOf(","));
+
     var data = {
+//        title: context.config.title.replace(/[[]]/g, ""),
+//        browser: context.config.browser.replace(/[[]]/g, ""),
+        title: titleFormatted,
+        browser: browserFormatted,
+        environment: environmentFormatted,
         tests: [],
         stat: {
             passed: 0,
             failed: 0,
             pending: 0,
-            disabled: 0
+            disabled: 0,
+            success_rate: 0
         },
+        failedSpecIDs: [],
+        passedSpecIDs: [],
         ci: ci,
-        generatedOn: new Date()
+        generatedOn: moment().tz("America/New_York").format("YYYY-MM-DD HH:mm:ss"),
+        diffMins : 0,
+        diffSecs : 0
+
     };
 
     //concat all tests
@@ -268,11 +299,66 @@ protractorUtil.joinReports = function(context, done) {
             for (var j = 0; j < report.tests.length; j++) {
                 var test = report.tests[j];
                 data.tests.push(test);
+                data.diffMins = moment.duration(moment(data.generatedOn) - moment(report.tests[0].start)).minutes();
+                data.diffSecs = moment.duration(moment(data.generatedOn) - moment(report.tests[0].start)).seconds();
+
+//                console.log('data.diffMins: ' + data.diffMins);
+//                console.log('data.generatedOn: ' + data.generatedOn);
+//
+//                console.log('report.tests[0].start: ' + report.tests[0].start);
+
+                if (test.status != 'passed') {
+                    var failedSpecID = {id: "", name: "", clientCard: "no client card info available", maritalStatus: "N/A", status: "Failed"};
+                    if (test.fullName.indexOf('with card number') > -1) {
+                        failedSpecID.id = test.fullName.substring(1, 6);
+                        failedSpecID.name = test.fullName.substring(7, test.fullName.indexOf('with card number')).replace("]","");
+                        failedSpecID.clientCard = test.fullName.substring(test.fullName.indexOf('with card number')+16,test.fullName.indexOf('<'));
+                        failedSpecID.maritalStatus = test.fullName.substring(test.fullName.indexOf('< and marital status:')+21,test.fullName.indexOf('>'));
+                   }
+                    else  {
+                        failedSpecID.name = test.fullName.substring(7, test.fullName.indexOf('should')).replace("]","");
+                        failedSpecID.id = test.fullName.substring(1, 6);
+                    }
+                    if (!data.failedSpecIDs.contains(failedSpecID.name,failedSpecID.clientCard) ) {
+                        data.failedSpecIDs.push(failedSpecID);
+                        updateFailures(data.passedSpecIDs,failedSpecID.name);
+                    }
+
+                    // Update data file with failure for spec
+//                    console.log("value in json file before update: " + statsFile.failedSpecID + "and success rate: " + (statsFile.failedSpecID.passes / statsFile.failedSpecID.executions * 100));
+
+                }
+
+                if (test.status == 'passed') {
+                    var passedSpecID = {name: "", clientCard: "no client card info available", maritalStatus: "N/A", status: "Passed"};
+
+                    if (test.fullName.indexOf('with card number') > -1) {
+                        passedSpecID.id = test.fullName.substring(1, 6);
+                        passedSpecID.name = test.fullName.substring(7, test.fullName.indexOf('with card number')).replace("]","");
+                        passedSpecID.clientCard = test.fullName.substring(test.fullName.indexOf('with card number')+16,test.fullName.indexOf('<'));
+                        passedSpecID.maritalStatus = test.fullName.substring(test.fullName.indexOf('< and marital status:')+21,test.fullName.indexOf('>'));
+                    }
+                    else  {
+                        passedSpecID.name = test.fullName.substring(7, test.fullName.indexOf('should')).replace("]","");
+                        passedSpecID.id = test.fullName.substring(1, 6);
+                    }
+
+                    if (!data.passedSpecIDs.contains(passedSpecID.name,passedSpecID.clientCard) && (!data.failedSpecIDs.contains(passedSpecID.name,passedSpecID.clientCard))) {
+                        data.passedSpecIDs.push(passedSpecID);
+                    }
+
+                    // Update data file with pass for spec
+//                    console.log("value in json file before update: " + statsFile.passedSpecID + "and success rate: " + (statsFile.passedSpecID.passes / statsFile.passedSpecID.executions * 100));
+
+
+                }
+
             }
             data.stat.passed += report.stat.passed || 0;
             data.stat.failed += report.stat.failed || 0;
             data.stat.pending += report.stat.pending || 0;
             data.stat.disabled += report.stat.disabled || 0;
+            data.stat.success_rate = (data.stat.passed/(data.stat.passed + data.stat.failed) * 100).toFixed(2);
         } catch (err) {
             // console.warn('Unknown error while process report %s', reports[i]);
             // protractorUtil.logDebug(err);
@@ -289,6 +375,13 @@ protractorUtil.joinReports = function(context, done) {
         }
         return done(null);
     });
+
+//console.log("\nFailed specs:");
+//
+//for (var i = 0; i < data.failedSpecIDs.length; i++) {
+//    console.log(i + ":" + data.failedSpecIDs[i]);
+//}
+
 };
 
 protractorUtil.installReporter = function(context) {
@@ -317,7 +410,7 @@ protractorUtil.registerJasmineReporter = function(context) {
         },
         specStarted: function(result) {
             protractorUtil.test = {
-                start: moment(),
+                start: moment().tz("America/New_York").format("YYYY-MM-DD HH:mm:ss"),
                 specScreenshots: [],
                 specLogs: [],
                 failedExpectations: [],
@@ -350,7 +443,7 @@ protractorUtil.registerJasmineReporter = function(context) {
                 protractorUtil.logInfo('Pause browser because of a spec failed  - %s', result.name);
                 protractorUtil.logDebug(result.failedExpectations[0].message);
                 protractorUtil.logDebug(result.failedExpectations[0].stack);
-                global.browser.pause();
+                global.browser.pause(Math.floor(Math.random() * (6000 - 5000 + 1)) + 5000);
             }
         }
     });
